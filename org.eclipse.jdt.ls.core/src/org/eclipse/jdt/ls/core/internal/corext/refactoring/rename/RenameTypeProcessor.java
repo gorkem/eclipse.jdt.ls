@@ -11,11 +11,21 @@
 
 package org.eclipse.jdt.ls.core.internal.corext.refactoring.rename;
 
+import java.util.Arrays;
+
 import org.eclipse.core.runtime.CoreException;
+import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.jdt.core.ICompilationUnit;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IMethod;
+import org.eclipse.jdt.core.IPackageFragment;
 import org.eclipse.jdt.core.IType;
+import org.eclipse.jdt.core.JavaCore;
+import org.eclipse.jdt.internal.corext.util.JavaModelUtil;
+import org.eclipse.jdt.ls.core.internal.ResourceUtils;
+import org.eclipse.lsp4j.ResourceChange;
+import org.eclipse.lsp4j.ResourceChangeType;
 import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.text.edits.ReplaceEdit;
 import org.eclipse.text.edits.TextEdit;
@@ -39,5 +49,35 @@ public class RenameTypeProcessor extends RenameProcessor {
 				convert(edit, t.getCompilationUnit(), replaceEdit);
 			}
 		}
+
+		if (isPrimaryType(t) && fElement.getResource() != null ){
+			// Resource change is needed
+			ResourceChange rc = new ResourceChange();
+			rc.setChangeType(ResourceChangeType.MOVE);
+			String newCUName = getNewCompilationUnit(t, newName).getElementName();
+			IPath currentPath = t.getCompilationUnit().getResource().getLocation();
+			rc.setPath(ResourceUtils.fixURI(t.getCompilationUnit().getResource().getRawLocationURI()));
+			IPath newPath = currentPath.removeLastSegments(1).append(newCUName);
+			rc.setNewPath(ResourceUtils.fixURI(newPath.toFile().toURI()));
+			edit.setResourceChanges(Arrays.asList(rc));
+		}
 	}
+
+	private boolean isPrimaryType(IType type) {
+		String cuName = type.getCompilationUnit().getElementName();
+		String typeName = type.getElementName();
+		return type.getDeclaringType() == null && JavaCore.removeJavaLikeExtension(cuName).equals(typeName);
+	}
+
+	private ICompilationUnit getNewCompilationUnit(IType type,String newName ) {
+		ICompilationUnit cu= type.getCompilationUnit();
+		if (isPrimaryType(type)) {
+			IPackageFragment parent= type.getPackageFragment();
+			String renamedCUName= JavaModelUtil.getRenamedCUName(cu, newName);
+			return parent.getCompilationUnit(renamedCUName);
+		} else {
+			return cu;
+		}
+	}
+
 }
